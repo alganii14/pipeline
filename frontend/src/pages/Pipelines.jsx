@@ -15,6 +15,12 @@ const Pipelines = () => {
   const [modalMode, setModalMode] = useState('create'); // 'create' or 'edit'
   const [currentPipeline, setCurrentPipeline] = useState(null);
 
+  // RFMT search modal states
+  const [showRFMTModal, setShowRFMTModal] = useState(false);
+  const [rfmtSearch, setRfmtSearch] = useState('');
+  const [rfmts, setRfmts] = useState([]);
+  const [selectedRFMT, setSelectedRFMT] = useState(null);
+
   const emptyForm = {
     pn: '',
     nama_rmft: '',
@@ -37,6 +43,15 @@ const Pipelines = () => {
     fetchPipelines();
   }, [page, search, strategy, segment]);
 
+  useEffect(() => {
+    if (showRFMTModal && rfmtSearch) {
+      const timer = setTimeout(() => {
+        searchRFMTs();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [rfmtSearch, showRFMTModal]);
+
   const fetchPipelines = async () => {
     setLoading(true);
     try {
@@ -55,6 +70,27 @@ const Pipelines = () => {
       console.error('Error fetching pipelines:', error);
       setLoading(false);
     }
+  };
+
+  const searchRFMTs = async () => {
+    try {
+      const response = await fetch(`http://localhost:8080/api/pipelines/search-rfmts?search=${rfmtSearch}&limit=20`);
+      const data = await response.json();
+      setRfmts(data || []);
+    } catch (error) {
+      console.error('Error searching RFMTs:', error);
+    }
+  };
+
+  const handleSelectRFMT = (rfmt) => {
+    setSelectedRFMT(rfmt);
+    setFormData({
+      ...formData,
+      pn: rfmt.pn,
+      nama_rmft: rfmt.nama_lengkap
+    });
+    setShowRFMTModal(false);
+    setRfmtSearch('');
   };
 
   const handleSearch = (e) => {
@@ -201,9 +237,14 @@ const Pipelines = () => {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Strategies</option>
-            <option value="Aggressive">Aggressive</option>
-            <option value="Moderate">Moderate</option>
-            <option value="Conservative">Conservative</option>
+            <option value="Kolaborasi Perusahaan Anak">Kolaborasi Perusahaan Anak</option>
+            <option value="Optimalisasi Business Cluster">Optimalisasi Business Cluster</option>
+            <option value="Optimalisasi Digital Channel">Optimalisasi Digital Channel</option>
+            <option value="Optimalisasi Nasabah Prio, BOD, BOC">Optimalisasi Nasabah Prio, BOD, BOC</option>
+            <option value="Penguatan Produk & Fungsi RM">Penguatan Produk & Fungsi RM</option>
+            <option value="Peningkatan Payroll Berkualitas">Peningkatan Payroll Berkualitas</option>
+            <option value="Reaktivasi Rek Dormant">Reaktivasi Rek Dormant</option>
+            <option value="Rekening Trx Debitur">Rekening Trx Debitur</option>
           </select>
           <select
             value={segment}
@@ -211,9 +252,16 @@ const Pipelines = () => {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Segments</option>
-            <option value="Premium">Premium</option>
-            <option value="Gold">Gold</option>
-            <option value="Silver">Silver</option>
+            <option value="KONSUMER">KONSUMER</option>
+            <option value="Merchant">Merchant</option>
+            <option value="Mikro">Mikro</option>
+            <option value="Prioritas">Prioritas</option>
+            <option value="RITEL BADAN USAHA">RITEL BADAN USAHA</option>
+            <option value="RITEL INDIVIDU">RITEL INDIVIDU</option>
+            <option value="RITEL NON INDIVIDU">RITEL NON INDIVIDU</option>
+            <option value="Ritel Perusahaan">Ritel Perusahaan</option>
+            <option value="SME">SME</option>
+            <option value="WEALTH">WEALTH</option>
           </select>
         </div>
       </div>
@@ -343,21 +391,33 @@ const Pipelines = () => {
                     type="text"
                     name="pn"
                     value={formData.pn}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    readOnly
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none"
                     required
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nama RMFT</label>
-                  <input
-                    type="text"
-                    name="nama_rmft"
-                    value={formData.nama_rmft}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      name="nama_rmft"
+                      value={formData.nama_rmft}
+                      readOnly
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRFMTModal(true);
+                        searchRFMTs();
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition whitespace-nowrap"
+                    >
+                      Select RFMT
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Kode Uker</label>
@@ -513,6 +573,77 @@ const Pipelines = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* RFMT Selection Modal */}
+      {showRFMTModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-11/12 max-w-3xl max-h-[90vh] overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900">Select RFMT</h3>
+              <button
+                onClick={() => {
+                  setShowRFMTModal(false);
+                  setRfmtSearch('');
+                  setRfmts([]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by PN or Nama Lengkap..."
+                  value={rfmtSearch}
+                  onChange={(e) => setRfmtSearch(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="overflow-y-auto max-h-96">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PN</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Lengkap</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">JG</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {rfmts.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="px-4 py-8 text-center text-gray-500">
+                          {rfmtSearch ? 'No RFMTs found' : 'Type to search RFMTs'}
+                        </td>
+                      </tr>
+                    ) : (
+                      rfmts.map((rfmt) => (
+                        <tr key={rfmt.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{rfmt.pn}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{rfmt.nama_lengkap}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{rfmt.jg}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <button
+                              onClick={() => handleSelectRFMT(rfmt)}
+                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                            >
+                              Select
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       )}

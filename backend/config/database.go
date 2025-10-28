@@ -34,8 +34,9 @@ func ConnectDatabase() {
 
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger:      logger.Default.LogMode(logger.Info),
-		PrepareStmt: true,
+		Logger:                                   logger.Default.LogMode(logger.Info),
+		PrepareStmt:                              true,
+		DisableForeignKeyConstraintWhenMigrating: false, // Enable FK constraints
 	})
 
 	if err != nil {

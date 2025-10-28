@@ -22,13 +22,74 @@ func main() {
 
 	// Auto migrate database schema
 	db := config.GetDB()
-	err := db.AutoMigrate(&models.Pipeline{})
-	if err != nil {
-		log.Fatal("Failed to migrate database:", err)
-	}
-	log.Println("✅ Database migration completed!")
 
-	// Create Fiber app
+	// Drop all tables first (fresh start) - EXCEPT uker table which has existing data
+	log.Println("🗑️  Dropping existing tables...")
+	db.Migrator().DropTable(&models.RFMT{})
+	db.Migrator().DropTable(&models.Pipeline{})
+	log.Println("✅ Tables dropped successfully!")
+
+	// Users table - for authentication
+	log.Println("📦 Creating users table...")
+	err := db.AutoMigrate(&models.User{})
+	if err != nil {
+		log.Fatal("Failed to migrate User:", err)
+	}
+
+	// Create default admin user if not exists
+	var userCount int64
+	db.Model(&models.User{}).Count(&userCount)
+	if userCount == 0 {
+		adminUser := models.User{
+			Username: "admin",
+			FullName: "Administrator",
+			Email:    "admin@pipeline.com",
+			Role:     "admin",
+			IsActive: true,
+		}
+		adminUser.HashPassword("admin123") // Default password
+		if err := db.Create(&adminUser).Error; err != nil {
+			log.Println("⚠️  Failed to create default admin user:", err)
+		} else {
+			log.Println("✅ Default admin user created (username: admin, password: admin123)")
+		}
+	}
+
+	// Uker table already exists with data - ensure it's migrated first (parent table)
+	log.Println("📦 Registering uker table (existing data preserved)...")
+	if db.Migrator().HasTable(&models.Uker{}) {
+		log.Println("✅ Uker table found with existing data")
+	} else {
+		log.Println("⚠️  Warning: Uker table not found in database")
+	}
+
+	// DI319 table already exists with data
+	log.Println("📦 Registering di319 table (existing data preserved)...")
+	if db.Migrator().HasTable(&models.DI319{}) {
+		log.Println("✅ DI319 table found with existing data")
+	} else {
+		log.Println("⚠️  Warning: DI319 table not found in database")
+	}
+
+	// Migrate product_type table
+	log.Println("📦 Creating product_type table...")
+	if err = db.AutoMigrate(&models.ProductType{}); err != nil {
+		log.Fatal("Failed to migrate ProductType:", err)
+	}
+
+	// Migrate pipelines table
+	log.Println("📦 Creating pipelines table...")
+	if err = db.AutoMigrate(&models.Pipeline{}); err != nil {
+		log.Fatal("Failed to migrate Pipeline:", err)
+	}
+
+	// Then migrate RFMTs (child table with FK to pipelines AND uker)
+	log.Println("📦 Creating rfmts table with FK constraints (pipeline & uker)...")
+	if err = db.AutoMigrate(&models.RFMT{}); err != nil {
+		log.Fatal("Failed to migrate RFMT:", err)
+	}
+
+	log.Println("✅ Database migration completed! All tables created with FK relationships.") // Create Fiber app
 	app := fiber.New(fiber.Config{
 		BodyLimit: 1024 * 1024 * 1024, // 1GB for large CSV files
 	})

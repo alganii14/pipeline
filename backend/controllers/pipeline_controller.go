@@ -187,47 +187,115 @@ func DeleteAllPipelines(c *fiber.Ctx) error {
 	})
 }
 
-// GetStats returns statistics for dashboard
+// GetStats returns statistics for dashboard (optimized version)
 func GetStats(c *fiber.Ctx) error {
 	db := config.GetDB()
 
-	// Use a single query to get all stats at once for better performance
+	// Use raw SQL for maximum performance
 	type StatsResult struct {
-		Total         int64
-		TotalProyeksi float64
+		Total         int64   `json:"total"`
+		TotalProyeksi float64 `json:"total_proyeksi"`
+	}
+
+	type GroupStats struct {
+		Name          string  `json:"name"`
+		Count         int64   `json:"count"`
+		TotalProyeksi float64 `json:"total_proyeksi"`
 	}
 
 	var result StatsResult
-	db.Model(&models.Pipeline{}).
-		Select("COUNT(*) as total, COALESCE(SUM(proyeksi), 0) as total_proyeksi").
-		Scan(&result)
+	var strategyStats []GroupStats
+	var segmentStats []GroupStats
 
-	// Get stats by strategy - optimized with index
-	var strategyStats []struct {
+	// Execute all queries in parallel using goroutines
+	done := make(chan bool, 3)
+
+	// Query 1: Total count and sum
+	go func() {
+		db.Raw("SELECT COUNT(*) as total, COALESCE(SUM(proyeksi), 0) as total_proyeksi FROM pipelines WHERE deleted_at IS NULL").
+			Scan(&result)
+		done <- true
+	}()
+
+	// Query 2: Strategy stats
+	go func() {
+		db.Raw("SELECT strategy as name, COUNT(*) as count, COALESCE(SUM(proyeksi), 0) as total_proyeksi FROM pipelines WHERE deleted_at IS NULL GROUP BY strategy").
+			Scan(&strategyStats)
+		done <- true
+	}()
+
+	// Query 3: Segment stats
+	go func() {
+		db.Raw("SELECT segment as name, COUNT(*) as count, COALESCE(SUM(proyeksi), 0) as total_proyeksi FROM pipelines WHERE deleted_at IS NULL GROUP BY segment").
+			Scan(&segmentStats)
+		done <- true
+	}()
+
+	// Wait for all queries to complete
+	for i := 0; i < 3; i++ {
+		<-done
+	}
+
+	// Transform strategy stats to match frontend format
+	var formattedStrategyStats []struct {
 		Strategy      string  `json:"strategy"`
 		Count         int64   `json:"count"`
 		TotalProyeksi float64 `json:"total_proyeksi"`
 	}
-	db.Model(&models.Pipeline{}).
-		Select("strategy, COUNT(*) as count, COALESCE(SUM(proyeksi), 0) as total_proyeksi").
-		Group("strategy").
-		Scan(&strategyStats)
+	for _, s := range strategyStats {
+		formattedStrategyStats = append(formattedStrategyStats, struct {
+			Strategy      string  `json:"strategy"`
+			Count         int64   `json:"count"`
+			TotalProyeksi float64 `json:"total_proyeksi"`
+		}{
+			Strategy:      s.Name,
+			Count:         s.Count,
+			TotalProyeksi: s.TotalProyeksi,
+		})
+	}
 
-	// Get stats by segment - optimized with index
-	var segmentStats []struct {
+	// Transform segment stats to match frontend format
+	var formattedSegmentStats []struct {
 		Segment       string  `json:"segment"`
 		Count         int64   `json:"count"`
 		TotalProyeksi float64 `json:"total_proyeksi"`
 	}
-	db.Model(&models.Pipeline{}).
-		Select("segment, COUNT(*) as count, COALESCE(SUM(proyeksi), 0) as total_proyeksi").
-		Group("segment").
-		Scan(&segmentStats)
+	for _, s := range segmentStats {
+		formattedSegmentStats = append(formattedSegmentStats, struct {
+			Segment       string  `json:"segment"`
+			Count         int64   `json:"count"`
+			TotalProyeksi float64 `json:"total_proyeksi"`
+		}{
+			Segment:       s.Name,
+			Count:         s.Count,
+			TotalProyeksi: s.TotalProyeksi,
+		})
+	}
 
 	return c.JSON(fiber.Map{
 		"total_pipelines": result.Total,
 		"total_proyeksi":  result.TotalProyeksi,
-		"strategy_stats":  strategyStats,
-		"segment_stats":   segmentStats,
+		"strategy_stats":  formattedStrategyStats,
+		"segment_stats":   formattedSegmentStats,
 	})
+}
+
+// SearchRFMTs - Search RFMTs by PN or Nama for Pipeline RMFT selection
+func SearchRFMTs(c *fiber.Ctx) error {
+	search := c.Query("search", "")
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+
+	db := config.GetDB()
+	var rfmts []models.RFMT
+	query := db.Model(&models.RFMT{})
+
+	if search != "" {
+		query = query.Where("pn LIKE ? OR nama_lengkap LIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	if err := query.Limit(limit).Order("pn ASC").Find(&rfmts).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to search RFMTs"})
+	}
+
+	return c.JSON(rfmts)
 }

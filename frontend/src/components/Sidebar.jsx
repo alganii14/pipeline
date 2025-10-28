@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Database, Upload, Settings, BarChart3, LogOut, User, X, AlertTriangle } from 'lucide-react';
+import { Home, Database, Upload, Settings, BarChart3, LogOut, User, X, AlertTriangle, Users, Building2, Package, FileSpreadsheet } from 'lucide-react';
 
 const Sidebar = () => {
   const location = useLocation();
@@ -10,6 +10,10 @@ const Sidebar = () => {
   const menuItems = [
     { path: '/', icon: Home, label: 'Dashboard' },
     { path: '/pipelines', icon: Database, label: 'Pipelines' },
+    { path: '/rfmts', icon: Users, label: 'RFMT' },
+    { path: '/ukers', icon: Building2, label: 'Uker' },
+    { path: '/product-types', icon: Package, label: 'Product Type' },
+    { path: '/di319', icon: FileSpreadsheet, label: 'DI319 Data' },
     { path: '/import', icon: Upload, label: 'Import Data' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ];
@@ -23,6 +27,9 @@ const Sidebar = () => {
   };
 
   const handleLogoutConfirm = () => {
+    // Remove all auth data
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('username');
     setShowLogoutModal(false);

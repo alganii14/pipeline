@@ -5,6 +5,10 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Pipelines from './pages/Pipelines';
+import RFMTs from './pages/RFMTs';
+import Ukers from './pages/Ukers';
+import ProductTypes from './pages/ProductTypes';
+import DI319Data from './pages/DI319Data';
 import ImportData from './pages/ImportData';
 import Settings from './pages/Settings';
 
@@ -32,6 +36,46 @@ function App() {
             <ProtectedRoute>
               <Layout>
                 <Pipelines />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/rfmts"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RFMTs />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ukers"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Ukers />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/product-types"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <ProductTypes />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/di319"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <DI319Data />
               </Layout>
             </ProtectedRoute>
           }

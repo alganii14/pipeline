@@ -254,27 +254,27 @@ const ImportData = () => {
                   {/* Import Statistics */}
                   <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                     <div className="bg-white rounded p-2">
-                      <p className="text-gray-600 text-xs">Data Masuk</p>
-                      <p className="text-lg font-bold text-purple-600">
-                        {formatNumber(importProgress.imported_rows)}
+                      <p className="text-gray-600 text-xs">DI319 Saved</p>
+                      <p className="text-lg font-bold text-green-600">
+                        {formatNumber(importProgress.imported_rows || importProgress.filtered_records)}
                       </p>
                     </div>
                     <div className="bg-white rounded p-2">
-                      <p className="text-gray-600 text-xs">Total Rows</p>
-                      <p className="text-lg font-bold text-blue-600">
+                      <p className="text-gray-600 text-xs">Total Processed</p>
+                      <p className="text-lg font-bold text-purple-600">
                         {formatNumber(importProgress.total_rows)}
                       </p>
                     </div>
                     <div className="bg-white rounded p-2">
-                      <p className="text-gray-600 text-xs">Kecepatan</p>
-                      <p className="text-lg font-bold text-green-600">
-                        {Math.round(importProgress.speed).toLocaleString()} rows/s
+                      <p className="text-gray-600 text-xs">Filter Rate</p>
+                      <p className="text-lg font-bold text-orange-600">
+                        {importProgress.filter_percentage ? `${importProgress.filter_percentage.toFixed(1)}%` : '-'}
                       </p>
                     </div>
                     <div className="bg-white rounded p-2">
-                      <p className="text-gray-600 text-xs">Prediksi Selesai</p>
-                      <p className="text-lg font-bold text-orange-600">
-                        {importProgress.estimated_time}
+                      <p className="text-gray-600 text-xs">Kecepatan</p>
+                      <p className="text-lg font-bold text-indigo-600">
+                        {Math.round(importProgress.speed || 0).toLocaleString()} rows/s
                       </p>
                     </div>
                   </div>
@@ -313,20 +313,24 @@ const ImportData = () => {
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                 <div className="bg-white rounded p-2">
-                  <p className="text-gray-600">Success</p>
-                  <p className="text-lg font-bold text-green-600">{formatNumber(result.success)}</p>
+                  <p className="text-gray-600">DI319 Saved</p>
+                  <p className="text-lg font-bold text-green-600">{formatNumber(result.success || result.imported_rows || result.filtered_records)}</p>
                 </div>
                 <div className="bg-white rounded p-2">
-                  <p className="text-gray-600">Failed</p>
-                  <p className="text-lg font-bold text-red-600">{formatNumber(result.failed)}</p>
+                  <p className="text-gray-600">Total Processed</p>
+                  <p className="text-lg font-bold text-purple-600">{formatNumber(result.total || result.total_rows)}</p>
                 </div>
+                {result.failed > 0 && (
+                  <div className="bg-white rounded p-2">
+                    <p className="text-gray-600">Failed</p>
+                    <p className="text-lg font-bold text-red-600">{formatNumber(result.failed)}</p>
+                  </div>
+                )}
                 <div className="bg-white rounded p-2">
-                  <p className="text-gray-600">Total</p>
-                  <p className="text-lg font-bold text-blue-600">{formatNumber(result.total)}</p>
-                </div>
-                <div className="bg-white rounded p-2">
-                  <p className="text-gray-600">Duration</p>
-                  <p className="text-lg font-bold text-purple-600">{result.duration}</p>
+                  <p className="text-gray-600">Filter Rate</p>
+                  <p className="text-lg font-bold text-orange-600">
+                    {result.filter_percentage ? `${result.filter_percentage.toFixed(1)}%` : '-'}
+                  </p>
                 </div>
               </div>
               {result.speed && (
@@ -351,6 +355,13 @@ const ImportData = () => {
                   </div>
                 </div>
               )}
+              {result.filter_percentage !== undefined && (
+                <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-3">
+                  <p className="text-xs text-blue-800">
+                    <strong>{result.filter_percentage.toFixed(1)}%</strong> of processed records met the ≥50% balance drop threshold and were saved to DI319 table.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -364,16 +375,17 @@ const ImportData = () => {
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Required Columns</h3>
               <div className="bg-gray-50 rounded-lg p-4">
                 <code className="text-xs text-gray-800 block whitespace-pre-wrap">
-                  PN,NAMA_RMFT,KODE_UKER,KC,PROD,NO_REK,DUP,NAMA,TGL,STRATEGY,SEGMENT,PIPELINE,PROYEKSI
+                  periode;main_branch;branch;cif;norek;type;nama;pn_pengelola;balance;aval_balance;avg_balance;open_date
                 </code>
               </div>
+              <p className="text-xs text-amber-600 mt-2 font-medium">⚠️ Delimiter: Semicolon (;)</p>
             </div>
 
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Example Row</h3>
               <div className="bg-gray-50 rounded-lg p-4">
                 <code className="text-xs text-gray-800 block whitespace-pre-wrap">
-                  PN001,RMFT Jakarta,UK001,KC Jakarta,PROD001,REK001,DUP001,Budi,2025-01-15,Aggressive,Premium,Pipeline A,1500000.50
+                  2025-01-15;KC Jakarta;10001;1234567890;1000000001;Tabungan;Budi Santoso;PN100123;150000000;200000000;200000000;2020-05-15
                 </code>
               </div>
             </div>
@@ -387,15 +399,19 @@ const ImportData = () => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
-                  <span>All fields are required except PROD, NO_REK, DUP, and PIPELINE</span>
+                  <span>Delimiter must be <strong>semicolon (;)</strong> not comma</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
-                  <span>PROYEKSI must be a valid number (can have decimals)</span>
+                  <span>All fields are required (12 columns total)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
-                  <span>TGL format: YYYY-MM-DD</span>
+                  <span>avg_balance can be empty (will skip pipeline creation)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600 mt-0.5">•</span>
+                  <span>Date format: YYYY-MM-DD (periode and open_date)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-600 mt-0.5">•</span>
@@ -405,27 +421,67 @@ const ImportData = () => {
                   <span className="text-blue-600 mt-0.5">•</span>
                   <span>Supports millions of rows with parallel processing</span>
                 </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-orange-600 mt-0.5">⚡</span>
+                  <span><strong>Only accounts with ≥50% balance drop</strong> will be saved to DI319 table</span>
+                </li>
               </ul>
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Valid Values</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Field Descriptions</h3>
+              <div className="grid grid-cols-1 gap-2 text-sm">
                 <div className="bg-blue-50 rounded p-3">
-                  <p className="font-medium text-gray-700 mb-1">Strategy</p>
-                  <ul className="text-gray-600 text-xs space-y-1">
-                    <li>• Aggressive</li>
-                    <li>• Moderate</li>
-                    <li>• Conservative</li>
-                  </ul>
-                </div>
-                <div className="bg-green-50 rounded p-3">
-                  <p className="font-medium text-gray-700 mb-1">Segment</p>
-                  <ul className="text-gray-600 text-xs space-y-1">
-                    <li>• Premium</li>
-                    <li>• Gold</li>
-                    <li>• Silver</li>
-                  </ul>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <p className="font-medium text-gray-700">periode</p>
+                      <p className="text-gray-600">Data period date</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">main_branch</p>
+                      <p className="text-gray-600">Main branch name</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">branch</p>
+                      <p className="text-gray-600">Branch code (5 chars)</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">cif</p>
+                      <p className="text-gray-600">Customer ID</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">norek</p>
+                      <p className="text-gray-600">Account number</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">type</p>
+                      <p className="text-gray-600">Account type</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">nama</p>
+                      <p className="text-gray-600">Customer name</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">pn_pengelola</p>
+                      <p className="text-gray-600">Manager PN code</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">balance</p>
+                      <p className="text-gray-600">Current balance</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">aval_balance</p>
+                      <p className="text-gray-600">Available balance</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">avg_balance</p>
+                      <p className="text-gray-600">Average balance (nullable)</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">open_date</p>
+                      <p className="text-gray-600">Account opening date</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -434,9 +490,9 @@ const ImportData = () => {
               <div className="flex items-start gap-2">
                 <Clock className="text-yellow-600 flex-shrink-0 mt-0.5" size={18} />
                 <div>
-                  <p className="text-sm font-medium text-yellow-800">Performance Tips</p>
+                  <p className="text-sm font-medium text-yellow-800">DI319 Import Logic</p>
                   <p className="text-xs text-yellow-700 mt-1">
-                    The system uses parallel processing with 8 workers and bulk inserts of 10,000 rows for optimal performance. Large files (millions of rows) are processed efficiently.
+                    Only data with <strong>≥50% balance decrease</strong> will be saved to <strong>DI319</strong> table. Records with less than 50% drop are filtered out. The system uses 8 parallel workers with 1,000-row batches for optimal performance.
                   </p>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Eye, EyeOff, User, Lock } from 'lucide-react';
+import { login } from '../api';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -15,19 +16,24 @@ const Login = () => {
     setError('');
     setLoading(true);
 
-    // Simulasi login - dalam production gunakan API
-    setTimeout(() => {
-      if (username === 'admin' && password === 'admin123') {
-        // Set login status
-        localStorage.setItem('isAuthenticated', 'true');
-        localStorage.setItem('username', username);
-        setLoading(false);
-        navigate('/dashboard');
-      } else {
-        setError('Username atau password salah');
-        setLoading(false);
-      }
-    }, 500);
+    try {
+      // Call login API
+      const response = await login(username, password);
+      
+      // Save token and user info to localStorage
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('username', response.data.user.username);
+      
+      // Redirect to dashboard
+      navigate('/');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err.response?.data?.error || 'Login gagal. Silakan coba lagi.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
