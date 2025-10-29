@@ -87,29 +87,101 @@ func (c *DI319ImportController) ImportCSV(ctx *fiber.Ctx) error {
 	}
 	defer src.Close()
 
-	// Parse CSV
+	// Parse CSV - auto-detect delimiter and skip to header
 	reader := csv.NewReader(src)
-	reader.Comma = ';' // Semicolon delimiter
-
-	// Read header
-	header, err := reader.Read()
-	if err != nil {
+	
+	// Try to detect delimiter and find header
+	var header []string
+	var headerIndex int
+	delimiter := ';'
+	
+	// Read first few lines to detect format
+	tempLines := [][]string{}
+	for i := 0; i < 10; i++ {
+		reader.Comma = ','
+		line, err := reader.Read()
+		if err != nil {
+			break
+		}
+		tempLines = append(tempLines, line)
+		
+		// Check if this line contains CIFNO or periode (header indicators)
+		lineStr := strings.Join(line, ",")
+		if strings.Contains(lineStr, "CIFNO") || strings.Contains(lineStr, "periode") {
+			header = line
+			headerIndex = i
+			// Detected comma format
+			delimiter = ','
+			break
+		}
+	}
+	
+	// If no header found with comma, try semicolon
+	if header == nil {
+		src.Close()
+		src, _ = file.Open()
+		reader = csv.NewReader(src)
+		reader.Comma = ';'
+		
+		for i := 0; i < 10; i++ {
+			line, err := reader.Read()
+			if err != nil {
+				break
+			}
+			lineStr := strings.Join(line, ";")
+			if strings.Contains(lineStr, "periode") || strings.Contains(lineStr, "branch") {
+				header = line
+				headerIndex = i
+				delimiter = ';'
+				break
+			}
+		}
+	}
+	
+	if header == nil {
 		di319ImportMutex.Lock()
 		di319ImportStatus = "error"
-		di319ImportMessage = "Failed to read CSV header"
+		di319ImportMessage = "Failed to find CSV header"
 		di319ImportMutex.Unlock()
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Failed to read CSV header",
+			"error": "Failed to find CSV header",
 		})
 	}
-
-	log.Println("CSV Header:", header)
+	
+	log.Printf("CSV Header found at line %d with delimiter '%c': %v", headerIndex+1, delimiter, header)
+	
+	// Reset reader to continue from after header
+	src.Close()
+	src, _ = file.Open()
+	reader = csv.NewReader(src)
+	reader.Comma = delimiter
+	
+	// Skip lines before header
+	for i := 0; i <= headerIndex; i++ {
+		reader.Read()
+	}
 
 	// Process in background
 	go func() {
 		var di319Records []models.DI319
-		var filteredCount int // Count records that meet ≥50% drop criteria
-		lineNumber := 1
+		var filteredCount int
+		lineNumber := headerIndex + 1 // Start counting from header
+		
+		// Create header map for flexible column mapping
+		headerMap := make(map[string]int)
+		for i, col := range header {
+			headerMap[strings.TrimSpace(strings.ToLower(col))] = i
+		}
+		
+		// Helper to get field by name with fallbacks
+		getField := func(record []string, names ...string) string {
+			for _, name := range names {
+				if idx, ok := headerMap[strings.ToLower(name)]; ok && idx < len(record) {
+					return strings.TrimSpace(record[idx])
+				}
+			}
+			return ""
+		}
 
 		for {
 			record, err := reader.Read()
@@ -119,73 +191,122 @@ func (c *DI319ImportController) ImportCSV(ctx *fiber.Ctx) error {
 			if err != nil {
 				log.Printf("Error reading line %d: %v", lineNumber, err)
 				lineNumber++
+
+				di319ImportMutex.Lock()
+				di319ImportTotal = lineNumber - headerIndex - 1
+				di319ImportMutex.Unlock()
 				continue
 			}
 
 			lineNumber++
 
-			// Parse DI319 record - expecting 12 fields (excluding auto-generated ID)
-			if len(record) < 12 {
-				log.Printf("Skipping line %d: insufficient fields (got %d, expected 12)", lineNumber, len(record))
-				continue
-			}
+			di319ImportMutex.Lock()
+			di319ImportTotal = lineNumber - headerIndex - 1
+			di319ImportMutex.Unlock()
 
-			// Parse fields based on expected structure
+			// Parse DI319 record with flexible mapping
 			di319 := models.DI319{}
-
-			// Periode (index 0)
-			if periodeDate, err := time.Parse("2006-01-02", strings.TrimSpace(record[0])); err == nil {
-				di319.Periode = periodeDate
+			
+			// Periode - try multiple field names and formats
+			periodeStr := getField(record, "periode", "textbox16", "date")
+			if periodeStr != "" {
+				// Try dd/MM/yyyy format first
+				if periodeDate, err := time.Parse("02/01/2006", periodeStr); err == nil {
+					di319.Periode = periodeDate
+				} else if periodeDate, err := time.Parse("2006-01-02", periodeStr); err == nil {
+					di319.Periode = periodeDate
+				} else {
+					log.Printf("Line %d: Invalid periode format: %s", lineNumber, periodeStr)
+					continue
+				}
 			} else {
-				log.Printf("Line %d: Invalid periode format: %s", lineNumber, record[0])
+				log.Printf("Line %d: Missing periode", lineNumber)
 				continue
 			}
 
-			// Main Branch (index 1)
-			di319.MainBranch = strings.TrimSpace(record[1])
+			// Main Branch
+			di319.MainBranch = getField(record, "main_branch", "textbox22", "mainbranch")
+			if di319.MainBranch == "" {
+				di319.MainBranch = "Unknown"
+			}
 
-			// Branch / kode_uker (index 2)
-			di319.Branch = strings.TrimSpace(record[2])
-
-			// CIF (index 3)
-			di319.CIF = strings.TrimSpace(record[3])
-
-			// NoRek (index 4)
-			di319.NoRek = strings.TrimSpace(record[4])
-
-			// Type (index 5)
-			di319.Type = strings.TrimSpace(record[5])
-
-			// Nama (index 6)
-			di319.Nama = strings.TrimSpace(record[6])
-
-			// PN Pengelola (index 7)
-			di319.PNPengelola = strings.TrimSpace(record[7])
-
-			// Balance (index 8)
-			balanceStr := strings.ReplaceAll(strings.TrimSpace(record[8]), ",", "")
-			if balance, err := strconv.ParseInt(balanceStr, 10, 64); err == nil {
-				di319.Balance = balance
-			} else {
-				log.Printf("Line %d: Invalid balance: %s", lineNumber, record[8])
+			// Branch
+			di319.Branch = getField(record, "branch", "textbox8", "kode_uker")
+			if di319.Branch == "" {
+				log.Printf("Line %d: Missing branch", lineNumber)
 				continue
 			}
 
-			// Aval Balance (index 9)
-			di319.AvalBalance = strings.TrimSpace(record[9])
+			// CIF
+			di319.CIF = getField(record, "cif", "cifno", "customer_id")
+			if di319.CIF == "" {
+				log.Printf("Line %d: Missing CIF", lineNumber)
+				continue
+			}
 
-			// Avg Balance - nullable (index 10)
-			avgBalanceStr := strings.TrimSpace(record[10])
-			if avgBalanceStr != "" && avgBalanceStr != "0" {
+			// NoRek
+			di319.NoRek = getField(record, "norek", "textbox15", "account_no")
+			if di319.NoRek == "" {
+				log.Printf("Line %d: Missing norek", lineNumber)
+				continue
+			}
+
+			// Type
+			di319.Type = getField(record, "type", "sccode", "product_type")
+			if di319.Type == "" {
+				di319.Type = "Unknown"
+			}
+
+			// Nama
+			di319.Nama = getField(record, "nama", "textbox38", "name", "customer_name")
+			if di319.Nama == "" {
+				di319.Nama = "Unknown"
+			}
+
+			// PN Pengelola - try multiple PN fields
+			di319.PNPengelola = getField(record, "pn_pengelola", "pn_rm_dana", "pn_singlepn", "pn_rm_pinjaman", "pn_relationship_officer")
+			if di319.PNPengelola == "" || strings.HasPrefix(di319.PNPengelola, "-") {
+				di319.PNPengelola = "UNKNOWN"
+			}
+
+			// Balance
+			balanceStr := strings.ReplaceAll(getField(record, "balance", "saldo", "current_balance"), ",", "")
+			balanceStr = strings.ReplaceAll(balanceStr, `"`, "")
+			if balance, err := strconv.ParseFloat(balanceStr, 64); err == nil {
+				di319.Balance = int64(balance)
+			} else {
+				log.Printf("Line %d: Invalid balance: %s", lineNumber, balanceStr)
+				continue
+			}
+
+			// Aval Balance
+			avalStr := getField(record, "aval_balance", "availbalance", "available_balance")
+			di319.AvalBalance = strings.ReplaceAll(strings.ReplaceAll(avalStr, ",", ""), `"`, "")
+
+			// Avg Balance - nullable
+			avgBalanceStr := strings.ReplaceAll(getField(record, "avg_balance", "avrgbalance", "average_balance"), ",", "")
+			avgBalanceStr = strings.ReplaceAll(avgBalanceStr, `"`, "")
+			if avgBalanceStr != "" && avgBalanceStr != "0" && avgBalanceStr != "-" {
 				di319.AvgBalance = &avgBalanceStr
 			}
 
-			// Open Date (index 11)
-			if openDate, err := time.Parse("2006-01-02", strings.TrimSpace(record[11])); err == nil {
-				di319.OpenDate = openDate
+			// Open Date
+			openDateStr := getField(record, "open_date", "textbox2", "opening_date")
+			if openDateStr != "" {
+				// Try multiple date formats
+				if openDate, err := time.Parse("1/2/2006", openDateStr); err == nil {
+					di319.OpenDate = openDate
+				} else if openDate, err := time.Parse("2006-01-02", openDateStr); err == nil {
+					di319.OpenDate = openDate
+				} else if openDate, err := time.Parse("02/01/2006", openDateStr); err == nil {
+					di319.OpenDate = openDate
+				} else {
+					log.Printf("Line %d: Invalid open_date format: %s", lineNumber, openDateStr)
+					continue
+				}
 			} else {
-				log.Printf("Line %d: Invalid open_date format: %s", lineNumber, record[11])
-				continue
+				// Default to periode if no open date
+				di319.OpenDate = di319.Periode
 			}
 
 			// ONLY save to DI319 if balance drop >= 50%
@@ -220,8 +341,8 @@ func (c *DI319ImportController) ImportCSV(ctx *fiber.Ctx) error {
 
 		// Calculate filter percentage
 		di319ImportMutex.Lock()
-		di319ImportTotal = lineNumber - 1 // Total lines processed (excluding header)
-		di319PipelineCreated = filteredCount // Records that met ≥50% criteria
+		di319ImportTotal = lineNumber - headerIndex - 1 // Total lines processed (excluding header)
+		di319PipelineCreated = filteredCount             // Records that met ≥50% criteria
 		if di319ImportTotal > 0 {
 			di319FilteredPercentage = (float64(di319ImportProgress) / float64(di319ImportTotal)) * 100
 		}
@@ -329,5 +450,96 @@ func (c *DI319ImportController) GetAll(ctx *fiber.Ctx) error {
 			"current_page":  page,
 			"page_size":     pageSize,
 		},
+	})
+}
+
+// GetStats - Get statistics for dashboard from DI319 data
+func (c *DI319ImportController) GetStats(ctx *fiber.Ctx) error {
+	// Use raw SQL for maximum performance
+	type StatsResult struct {
+		Total        int64 `json:"total"`
+		TotalBalance int64 `json:"total_balance"`
+	}
+
+	type GroupStats struct {
+		Name         string `json:"name"`
+		Count        int64  `json:"count"`
+		TotalBalance int64  `json:"total_balance"`
+	}
+
+	var result StatsResult
+	var branchStats []GroupStats
+	var typeStats []GroupStats
+
+	// Execute all queries in parallel using goroutines
+	done := make(chan bool, 3)
+
+	// Query 1: Total count and sum
+	go func() {
+		c.DB.Raw("SELECT COUNT(*) as total, COALESCE(SUM(balance), 0) as total_balance FROM di319").
+			Scan(&result)
+		done <- true
+	}()
+
+	// Query 2: Branch stats (top 10 branches)
+	go func() {
+		c.DB.Raw("SELECT branch as name, COUNT(*) as count, COALESCE(SUM(balance), 0) as total_balance FROM di319 GROUP BY branch ORDER BY total_balance DESC LIMIT 10").
+			Scan(&branchStats)
+		done <- true
+	}()
+
+	// Query 3: Type stats
+	go func() {
+		c.DB.Raw("SELECT type as name, COUNT(*) as count, COALESCE(SUM(balance), 0) as total_balance FROM di319 GROUP BY type").
+			Scan(&typeStats)
+		done <- true
+	}()
+
+	// Wait for all queries to complete
+	for i := 0; i < 3; i++ {
+		<-done
+	}
+
+	// Transform branch stats to match frontend format (as strategy)
+	var formattedStrategyStats []struct {
+		Strategy      string `json:"strategy"`
+		Count         int64  `json:"count"`
+		TotalProyeksi int64  `json:"total_proyeksi"`
+	}
+	for _, s := range branchStats {
+		formattedStrategyStats = append(formattedStrategyStats, struct {
+			Strategy      string `json:"strategy"`
+			Count         int64  `json:"count"`
+			TotalProyeksi int64  `json:"total_proyeksi"`
+		}{
+			Strategy:      s.Name,
+			Count:         s.Count,
+			TotalProyeksi: s.TotalBalance,
+		})
+	}
+
+	// Transform type stats to match frontend format (as segment)
+	var formattedSegmentStats []struct {
+		Segment       string `json:"segment"`
+		Count         int64  `json:"count"`
+		TotalProyeksi int64  `json:"total_proyeksi"`
+	}
+	for _, s := range typeStats {
+		formattedSegmentStats = append(formattedSegmentStats, struct {
+			Segment       string `json:"segment"`
+			Count         int64  `json:"count"`
+			TotalProyeksi int64  `json:"total_proyeksi"`
+		}{
+			Segment:       s.Name,
+			Count:         s.Count,
+			TotalProyeksi: s.TotalBalance,
+		})
+	}
+
+	return ctx.JSON(fiber.Map{
+		"total_pipelines": result.Total,
+		"total_proyeksi":  result.TotalBalance,
+		"strategy_stats":  formattedStrategyStats,
+		"segment_stats":   formattedSegmentStats,
 	})
 }

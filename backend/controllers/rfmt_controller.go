@@ -28,7 +28,7 @@ func (c *RFMTController) GetAll(ctx *fiber.Ctx) error {
 	var rfmts []models.RFMT
 	var total int64
 
-	query := c.DB.Model(&models.RFMT{}).Preload("Pipeline").Preload("UkerRelation")
+	query := c.DB.Model(&models.RFMT{}).Preload("UkerRelation")
 
 	// Filter by PN if provided
 	if pn != "" {
@@ -60,7 +60,7 @@ func (c *RFMTController) GetByID(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
 
 	var rfmt models.RFMT
-	if err := c.DB.Preload("Pipeline").Preload("UkerRelation").First(&rfmt, id).Error; err != nil {
+	if err := c.DB.Preload("UkerRelation").First(&rfmt, id).Error; err != nil {
 		return ctx.Status(404).JSON(fiber.Map{"error": "RFMT not found"})
 	}
 
@@ -84,8 +84,8 @@ func (c *RFMTController) Create(ctx *fiber.Ctx) error {
 		return ctx.Status(500).JSON(fiber.Map{"error": "Failed to create RFMT"})
 	}
 
-	// Load pipeline and uker relation if exists
-	c.DB.Preload("Pipeline").Preload("UkerRelation").First(&rfmt, rfmt.ID)
+	// Load uker relation if exists
+	c.DB.Preload("UkerRelation").First(&rfmt, rfmt.ID)
 
 	return ctx.Status(201).JSON(rfmt)
 }
@@ -112,8 +112,8 @@ func (c *RFMTController) Update(ctx *fiber.Ctx) error {
 		return ctx.Status(500).JSON(fiber.Map{"error": "Failed to update RFMT"})
 	}
 
-	// Load pipeline and uker relation if exists
-	c.DB.Preload("Pipeline").Preload("UkerRelation").First(&rfmt, rfmt.ID)
+	// Load uker relation if exists
+	c.DB.Preload("UkerRelation").First(&rfmt, rfmt.ID)
 
 	return ctx.JSON(rfmt)
 }

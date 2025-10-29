@@ -8,8 +8,6 @@ import (
 
 type RFMT struct {
 	ID                  uint           `gorm:"primarykey" json:"id"`
-	PipelineID          *uint          `gorm:"index:idx_rfmt_pipeline_id" json:"pipeline_id,omitempty"`
-	Pipeline            *Pipeline      `gorm:"foreignKey:PipelineID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:SET NULL" json:"pipeline,omitempty"`
 	UkerID              *int           `gorm:"type:int;index:idx_rfmt_uker_id" json:"uker_id,omitempty"`
 	UkerRelation        *Uker          `gorm:"foreignKey:UkerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:SET NULL" json:"uker_relation,omitempty"`
 	PN                  string         `gorm:"type:varchar(50);index:idx_rfmt_pn;not null" json:"pn"`

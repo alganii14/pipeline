@@ -35,23 +35,11 @@ func SetupRoutes(app *fiber.App) {
 	protected.Get("/profile", authController.GetProfile)
 	protected.Post("/change-password", authController.ChangePassword)
 
-	// Dashboard stats (protected)
-	protected.Get("/stats", controllers.GetStats)
-
 	// Initialize controllers
 	di319Controller := controllers.NewDI319ImportController(db)
 
-	// Pipeline routes (Protected - Import now uses DI319 logic with >= 50% filter)
-	pipelines := protected.Group("/pipelines")
-	pipelines.Get("/", controllers.GetPipelines)
-	pipelines.Get("/search-rfmts", controllers.SearchRFMTs) // Must be before /:id
-	pipelines.Post("/", controllers.CreatePipeline)
-	pipelines.Post("/import", di319Controller.ImportCSV)                 // Import DI319 with auto-filter to pipelines
-	pipelines.Get("/import/progress", di319Controller.GetImportProgress) // Get import progress
-	pipelines.Delete("/all", controllers.DeleteAllPipelines)             // Delete all pipelines - MUST be before /:id
-	pipelines.Get("/:id", controllers.GetPipeline)
-	pipelines.Put("/:id", controllers.UpdatePipeline)
-	pipelines.Delete("/:id", controllers.DeletePipeline)
+	// Dashboard stats (protected) - Now uses DI319 data
+	protected.Get("/stats", di319Controller.GetStats)
 
 	// RFMT routes (Protected)
 	rfmtController := controllers.NewRFMTController(db)

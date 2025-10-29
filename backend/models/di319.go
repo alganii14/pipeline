@@ -3,7 +3,7 @@ package models
 import "time"
 
 type DI319 struct {
-	ID          uint      `gorm:"primarykey" json:"id"`
+	ID          uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Periode     time.Time `gorm:"type:date;not null" json:"periode"`
 	MainBranch  string    `gorm:"type:varchar(100);not null" json:"main_branch"`
 	Branch      string    `gorm:"type:varchar(5);not null;index:idx_di319_branch" json:"branch"`

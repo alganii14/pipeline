@@ -26,7 +26,6 @@ func main() {
 	// Drop all tables first (fresh start) - EXCEPT uker table which has existing data
 	log.Println("🗑️  Dropping existing tables...")
 	db.Migrator().DropTable(&models.RFMT{})
-	db.Migrator().DropTable(&models.Pipeline{})
 	log.Println("✅ Tables dropped successfully!")
 
 	// Users table - for authentication
@@ -77,14 +76,8 @@ func main() {
 		log.Fatal("Failed to migrate ProductType:", err)
 	}
 
-	// Migrate pipelines table
-	log.Println("📦 Creating pipelines table...")
-	if err = db.AutoMigrate(&models.Pipeline{}); err != nil {
-		log.Fatal("Failed to migrate Pipeline:", err)
-	}
-
-	// Then migrate RFMTs (child table with FK to pipelines AND uker)
-	log.Println("📦 Creating rfmts table with FK constraints (pipeline & uker)...")
+	// Then migrate RFMTs (child table with FK to uker)
+	log.Println("📦 Creating rfmts table with FK constraints (uker)...")
 	if err = db.AutoMigrate(&models.RFMT{}); err != nil {
 		log.Fatal("Failed to migrate RFMT:", err)
 	}
